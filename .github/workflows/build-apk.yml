@@ -14,30 +14,56 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract project ZIP
+      - name: Extract Android project
+        shell: bash
         run: |
-          unzip -o Future_Aviator_Odds_Corrected.zip -d extracted
-          find extracted -type f | head -50
+          set -e
+          rm -rf extracted
+          mkdir extracted
+          unzip -q Future_Aviator_Odds_Corrected.zip -d extracted
 
-      - name: Find Android project
-        run: |
-          PROJECT_DIR=$(find extracted -name settings.gradle -o -name settings.gradle.kts | head -1 | xargs dirname)
+          PROJECT_DIR=$(find extracted -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit | xargs -r dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Android Gradle project not found."
+            exit 1
+          fi
+
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Android project found at: $PROJECT_DIR"
 
-      - name: Set up Java
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Build APK
+      - name: Install Gradle
+        shell: bash
+        run: |
+          set -e
+          curl -fsSL https://services.gradle.org/distributions/gradle-8.10.2-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp/gradle
+          echo "/tmp/gradle/gradle-8.10.2/bin" >> "$GITHUB_PATH"
+          gradle --version
+
+      - name: Build debug APK
+        shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          set -e
+          gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          APK="${PROJECT_DIR}/app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK"
+          ls -lh "$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Future-Aviator-APK
-          path: "**/build/outputs/apk/debug/*.apk"
+          name: Future-Aviator-Odds-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
